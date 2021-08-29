@@ -80,6 +80,12 @@ void setup() {
   (*Mu).write(VISION_COLOR_DETECT, kLabel, MU_COLOR_WHITE);            // set detect color type: black
   (*Mu).CameraSetAwb(kLockWhiteBalance); 
 
+  (*Mu).LsBegin(LS_PROXIMITY_ENABLE);
+  // light set sensitivity, default value is kSensitivity2
+  (*Mu).LsSetSensitivity(kSensitivity2);
+  // enable white balance for color detection
+  (*Mu).LsWhiteBalanceEnable();
+
   pwm.begin();
   pwm.setPWMFreq(60 * PWM_FACTOR); // Analog servos run at ~60 Hz updates
 
@@ -88,7 +94,7 @@ void setup() {
     servoCalibs[i] = servoCalib(i);
     calibratedDuty0[i] =  SERVOMIN + PWM_RANGE / 2 + float(middleShift(i) + servoCalibs[i]) * pulsePerDegree[i]  * rotationDirection(i) ;
   }
-  shutServos();
+  //shutServos();
   counter = 0;
   //  motion.loadBySkillName("rest");
   //  transform(motion.dutyAngles);
@@ -99,8 +105,45 @@ void loop() {
   // put your main code here, to run repeatedly:
   long time_start = millis();
   if (!(counter++ % skip)) {
-      Serial.println("entered");
-      checkLine();
+      //Serial.println("entered");
+      uint8_t proximity = (*Mu).LsReadProximity();
+      if (proximity >= 175 || proximity == 0){
+        char cmd[CMD_LEN] = {};
+        strcpy(cmd, "bk");
+        if (strcmp(lastCmd, cmd)){
+        motion.loadBySkillName(cmd);
+    #ifdef DEVELOPER
+        PTF("free memory: ");
+        PTL(freeMemory());
+#endif
+        timer = 0;
+        counter = 0;
+    if (strcmp(cmd, "balance") && strcmp(cmd, "lifted") && strcmp(cmd, "dropped") )
+         strcpy(lastCmd, cmd);
+        
+        // if posture, start jointIdx from 0
+        // if gait, walking DOF = 8, start jointIdx from 8
+        //          walking DOF = 12, start jointIdx from 4
+        firstValidJoint = (motion.period == 1) ? 0 : DOF - WALKING_DOF;
+        jointIdx = firstValidJoint;
+        transform(motion.dutyAngles, 1, 1, firstValidJoint);
+        //Serial.println("transformed");
+        if (!strcmp(cmd, "rest")) {
+          shutServos();
+          token = T_REST;
+        }
+        }
+      }
+      else{
+      if (strcmp(lastCmd, "bk")){
+        Serial.println(proximity);
+        checkLine();
+      }
+      else{
+        move(5);
+        strcmp(lastCmd, "balance");
+      }
+      }
   }
   {
 #ifndef HEAD  //skip head
@@ -188,7 +231,7 @@ void move(int a){
   }
   if (strcmp(lastCmd, cmd)){
     motion.loadBySkillName(cmd);
-    Serial.println(motion.period);
+    //Serial.println(motion.period);
     #ifdef DEVELOPER
         PTF("free memory: ");
         PTL(freeMemory());
